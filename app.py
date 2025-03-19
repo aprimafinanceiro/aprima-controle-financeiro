@@ -994,6 +994,5 @@ def webhook():
             resp.message("⚠️ Não entendi. Ex.: 'Gastei 50 em gasolina', 'Recebi 100 de salário', 'Excluir #60fc', 'Resumo semana'")
         return str(resp)
 
-if __name__ == "__main__":
-    criar_banco()
-   app.run(host='0.0.0.0', port=5000, debug=True)
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)
