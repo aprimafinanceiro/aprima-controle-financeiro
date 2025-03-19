@@ -38,7 +38,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Configuração de locale e SpaCy
-locale.setlocale(locale.LC_ALL, 'pt_BR.UTF-8')
+try:
+    locale.setlocale(locale.LC_ALL, 'pt_BR.UTF-8')
+except locale.Error:
+    locale.setlocale(locale.LC_ALL, '')  # Usa o locale padrão do sistema
+    
 nlp = spacy.load("pt_core_news_sm")
 
 # Categorias e Subcategorias
