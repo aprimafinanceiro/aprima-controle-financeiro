@@ -77,7 +77,7 @@ CATEGORIAS_DESPESA = {
     ],
     "Educação": [
         "escola", "colégio", "faculdade", "universidade", "curso", "aula", "livros", "livro", "material escolar", 
-        "material", "pós-graduação", "pos", "tutoria particular", "professor particular", "plataformas de ensino", 
+        "material", "pós-graduação", "pós", "tutoria particular", "professor particular", "plataformas de ensino", 
         "EAD", "workshops", "workshop", "congressos", "seminário", "certificações", "certificado", "aulas online", 
         "idiomas", "inglês", "espanhol", "caderno", "mochila", "caneta", "treinamento", "palestra", "escola técnica", 
         "uniforme", "matrícula"
