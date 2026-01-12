@@ -1,0 +1,473 @@
+{
+  "name": "WhatsApp → Facebook Marketplace (Imóveis)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-imoveis",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-whatsapp",
+      "name": "Webhook WhatsApp",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "whatsapp-imoveis"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extrai texto da mensagem\nconst message = $input.item.json.message || {};\nlet text = '';\nlet images = [];\n\nif (typeof message === 'string') {\n  text = message;\n} else {\n  text = message.conversation || message.text?.body || '';\n  \n  // Extrai imagens\n  if (message.imageMessage?.url) {\n    images.push(message.imageMessage.url);\n  }\n  if (message.images) {\n    images = images.concat(message.images);\n  }\n}\n\n// Keywords para detectar imóveis\nconst keywords = [\n  'casa', 'apartamento', 'apto', 'imóvel', 'imovel',\n  'aluguel', 'venda', 'locação', 'locacao', 'r$',\n  'quartos', 'quarto', 'banheiro', 'suite', 'suíte',\n  'vaga', 'garagem', 'metragem', 'm²', 'm2'\n];\n\n// Verifica se é mensagem sobre imóvel\nconst textLower = text.toLowerCase();\nconst isImovel = keywords.some(keyword => textLower.includes(keyword));\n\nif (!isImovel) {\n  return [{\n    json: {\n      isImovel: false,\n      message: 'Não é mensagem sobre imóvel'\n    }\n  }];\n}\n\n// Extrai preço\nconst pricePatterns = [\n  /R\\$\\s*(\\d+\\.?\\d*\\.?\\d*)/i,\n  /(\\d+\\.?\\d*\\.?\\d*)\\s*reais/i,\n  /valor:?\\s*(\\d+\\.?\\d*\\.?\\d*)/i,\n  /preço:?\\s*R?\\$?\\s*(\\d+\\.?\\d*\\.?\\d*)/i\n];\n\nlet preco = '0';\nfor (const pattern of pricePatterns) {\n  const match = text.match(pattern);\n  if (match) {\n    preco = match[1].replace(/\\./g, '');\n    break;\n  }\n}\n\n// Extrai tipo de imóvel\nlet tipo = 'imóvel';\nif (textLower.includes('casa')) tipo = 'casa';\nelse if (textLower.includes('apartamento') || textLower.includes('apto')) tipo = 'apartamento';\nelse if (textLower.includes('kitnet') || textLower.includes('quitinete')) tipo = 'kitnet';\nelse if (textLower.includes('comercial') || textLower.includes('sala comercial')) tipo = 'comercial';\nelse if (textLower.includes('terreno')) tipo = 'terreno';\n\n// Identifica transação\nlet transacao = 'aluguel';\nif (textLower.includes('venda') || textLower.includes('vende-se')) {\n  transacao = 'venda';\n} else if (textLower.includes('aluguel') || textLower.includes('locação') || textLower.includes('locacao')) {\n  transacao = 'aluguel';\n}\n\n// Gera título\nlet titulo = `${tipo.charAt(0).toUpperCase() + tipo.slice(1)} para ${transacao}`;\nif (preco !== '0') {\n  titulo += ` - R$ ${preco}`;\n}\n\nreturn [{\n  json: {\n    isImovel: true,\n    whatsapp_message_id: $input.item.json.messageId || '',\n    whatsapp_from: $input.item.json.from || '',\n    titulo: titulo,\n    descricao: text.substring(0, 500),\n    preco: preco,\n    tipo: tipo,\n    transacao: transacao,\n    images: images,\n    raw_text: text\n  }\n}];"
+      },
+      "id": "processar-mensagem",
+      "name": "Processar Mensagem",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.isImovel}}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "if-imovel",
+      "name": "É Imóvel?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "tableId": "imoveis",
+        "columnsUi": {
+          "columnValues": [
+            {
+              "column": "whatsapp_message_id",
+              "value": "={{$json.whatsapp_message_id}}"
+            },
+            {
+              "column": "whatsapp_from",
+              "value": "={{$json.whatsapp_from}}"
+            },
+            {
+              "column": "titulo",
+              "value": "={{$json.titulo}}"
+            },
+            {
+              "column": "descricao",
+              "value": "={{$json.descricao}}"
+            },
+            {
+              "column": "preco",
+              "value": "={{$json.preco}}"
+            },
+            {
+              "column": "tipo_imovel",
+              "value": "={{$json.tipo}}"
+            },
+            {
+              "column": "imagens_urls",
+              "value": "={{JSON.stringify($json.images)}}"
+            },
+            {
+              "column": "status",
+              "value": "pendente"
+            }
+          ]
+        }
+      },
+      "id": "supabase-insert",
+      "name": "Salvar no Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [850, 200],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json.images.length}}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "if-tem-imagens",
+      "name": "Tem Imagens?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Prepara dados para upload no Facebook\nconst images = $json.images || [];\nconst facebookPageId = $env.FACEBOOK_PAGE_ID;\nconst accessToken = $env.FACEBOOK_ACCESS_TOKEN;\n\nconst items = [];\n\nfor (const imageUrl of images) {\n  items.push({\n    json: {\n      imageUrl: imageUrl,\n      pageId: facebookPageId,\n      accessToken: accessToken,\n      titulo: $json.titulo,\n      descricao: $json.descricao,\n      preco: $json.preco,\n      tipo: $json.tipo,\n      transacao: $json.transacao,\n      imovelId: $json.id\n    }\n  });\n}\n\nreturn items;"
+      },
+      "id": "preparar-facebook",
+      "name": "Preparar para Facebook",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1250, 100]
+    },
+    {
+      "parameters": {
+        "url": "={{$json.imageUrl}}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "baixar-imagem",
+      "name": "Baixar Imagem",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v18.0/{{$json.pageId}}/photos",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{$json.accessToken}}"
+            },
+            {
+              "name": "published",
+              "value": "false"
+            }
+          ]
+        },
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1000
+            }
+          }
+        }
+      },
+      "id": "upload-facebook",
+      "name": "Upload Foto Facebook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1650, 100]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "merge-fotos",
+      "name": "Agrupar Fotos",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [1850, 100]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Agrupa IDs das fotos\nconst photoIds = $input.all().map(item => ({\n  id: item.json.id\n}));\n\nconst firstItem = $input.first().json;\n\nreturn [{\n  json: {\n    photoIds: photoIds,\n    titulo: firstItem.titulo,\n    descricao: firstItem.descricao,\n    preco: firstItem.preco,\n    tipo: firstItem.tipo,\n    transacao: firstItem.transacao,\n    pageId: firstItem.pageId,\n    accessToken: firstItem.accessToken,\n    imovelId: firstItem.imovelId\n  }\n}];"
+      },
+      "id": "agrupar-ids",
+      "name": "Agrupar IDs das Fotos",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [2050, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v18.0/{{$json.pageId}}/marketplace_listings",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{$json.accessToken}}"
+            },
+            {
+              "name": "name",
+              "value": "={{$json.titulo}}"
+            },
+            {
+              "name": "description",
+              "value": "={{$json.descricao}}"
+            },
+            {
+              "name": "price",
+              "value": "={{$json.preco}}"
+            },
+            {
+              "name": "currency",
+              "value": "BRL"
+            },
+            {
+              "name": "availability",
+              "value": "AVAILABLE"
+            },
+            {
+              "name": "condition",
+              "value": "NEW"
+            },
+            {
+              "name": "category",
+              "value": "={{$json.transacao === 'aluguel' ? 'property_for_rent' : 'property_for_sale'}}"
+            },
+            {
+              "name": "images",
+              "value": "={{JSON.stringify($json.photoIds)}}"
+            }
+          ]
+        }
+      },
+      "id": "criar-listing",
+      "name": "Criar Anúncio Facebook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2250, 100]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "imoveis",
+        "filterType": "manual",
+        "matchFields": [
+          {
+            "field": "id",
+            "operator": "equals",
+            "value": "={{$json.imovelId}}"
+          }
+        ],
+        "columnsUi": {
+          "columnValues": [
+            {
+              "column": "facebook_listing_id",
+              "value": "={{$json.id}}"
+            },
+            {
+              "column": "status",
+              "value": "publicado"
+            }
+          ]
+        }
+      },
+      "id": "atualizar-supabase",
+      "name": "Atualizar Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [2450, 100],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"sucesso\", \"titulo\": $json.titulo, \"facebook_listing_id\": $json.id } }}"
+      },
+      "id": "responder-sucesso",
+      "name": "Responder Sucesso",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2650, 100]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"salvo\", \"titulo\": $json.titulo, \"motivo\": \"sem imagens\" } }}"
+      },
+      "id": "responder-sem-imagens",
+      "name": "Responder Sem Imagens",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"ignorado\", \"motivo\": \"não é mensagem de imóvel\" } }}"
+      },
+      "id": "responder-ignorado",
+      "name": "Responder Ignorado",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [850, 400]
+    }
+  ],
+  "connections": {
+    "Webhook WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Processar Mensagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar Mensagem": {
+      "main": [
+        [
+          {
+            "node": "É Imóvel?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É Imóvel?": {
+      "main": [
+        [
+          {
+            "node": "Salvar no Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder Ignorado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar no Supabase": {
+      "main": [
+        [
+          {
+            "node": "Tem Imagens?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem Imagens?": {
+      "main": [
+        [
+          {
+            "node": "Preparar para Facebook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder Sem Imagens",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar para Facebook": {
+      "main": [
+        [
+          {
+            "node": "Baixar Imagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Baixar Imagem": {
+      "main": [
+        [
+          {
+            "node": "Upload Foto Facebook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Foto Facebook": {
+      "main": [
+        [
+          {
+            "node": "Agrupar Fotos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agrupar Fotos": {
+      "main": [
+        [
+          {
+            "node": "Agrupar IDs das Fotos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agrupar IDs das Fotos": {
+      "main": [
+        [
+          {
+            "node": "Criar Anúncio Facebook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Criar Anúncio Facebook": {
+      "main": [
+        [
+          {
+            "node": "Atualizar Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Atualizar Supabase": {
+      "main": [
+        [
+          {
+            "node": "Responder Sucesso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

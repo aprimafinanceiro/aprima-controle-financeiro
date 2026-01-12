@@ -2,6 +2,29 @@
 
 Sistema automatizado que monitora mensagens de um grupo do WhatsApp, identifica anúncios de imóveis (com fotos e descrições) e publica automaticamente no Facebook Marketplace usando Supabase como banco de dados.
 
+## Escolha Sua Abordagem
+
+Este projeto oferece **duas formas** de implementação:
+
+### 1️⃣ Python (app.py) - Código Tradicional
+- ✅ Código Python Flask
+- ✅ Mais controle e flexibilidade
+- ✅ Performance otimizada
+- 📖 Deploy: Veja seção "Instalação" abaixo
+
+### 2️⃣ n8n - Automação Visual (Recomendado para iniciantes)
+- ✅ Interface visual (arrastar e soltar)
+- ✅ Fácil de modificar sem código
+- ✅ 400+ integrações prontas
+- ✅ Self-hosted ou cloud
+- 📖 Setup: Leia [N8N_SETUP.md](N8N_SETUP.md)
+- 🚀 Deploy rápido: `bash deploy-n8n.sh`
+
+**💡 Escolha n8n se:** você prefere interface visual e quer modificar facilmente
+**💡 Escolha Python se:** você precisa de performance máxima e controle total
+
+---
+
 ## Funcionalidades
 
 - Recebe mensagens via webhook da Evolution API (WhatsApp)
@@ -345,13 +368,22 @@ Próximo ao metrô
 
 ```
 aprima-controle-financeiro/
-├── app.py                 # Aplicação Flask principal
-├── requirements.txt       # Dependências Python
-├── setup_supabase.sql     # Script SQL para criar tabelas no Supabase
-├── render.yaml           # Configuração de deployment
-├── .env.example          # Template de variáveis de ambiente
-├── .gitignore            # Arquivos ignorados pelo Git
-└── README.md             # Esta documentação
+├── app.py                    # Aplicação Flask principal (Python)
+├── requirements.txt          # Dependências Python
+├── setup_supabase.sql        # Script SQL para criar tabelas no Supabase
+├── render.yaml              # Configuração de deployment (Render.com)
+├── .env.example             # Template de variáveis de ambiente
+├── .gitignore               # Arquivos ignorados pelo Git
+│
+├── deploy.sh                # Script deploy automatizado Python (VPS)
+├── deploy-n8n.sh            # Script deploy automatizado n8n (VPS)
+├── aprima-imoveis.service   # Configuração systemd (Python)
+├── nginx.conf               # Configuração Nginx (Python)
+│
+├── n8n-workflow.json        # Workflow n8n (importar no n8n)
+├── N8N_SETUP.md             # Guia completo setup n8n
+├── DEPLOY_VPS.md            # Guia deploy manual VPS
+└── README.md                # Esta documentação
 ```
 
 ## Classes Principais
