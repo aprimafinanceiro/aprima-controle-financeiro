@@ -95,6 +95,59 @@ O projeto já está configurado para deploy no Render.com:
    - `EVOLUTION_API_KEY`
 4. O Render detectará automaticamente o `render.yaml`
 
+### Deploy em VPS (Hostinger, DigitalOcean, etc)
+
+**Opção 1: Deploy Automatizado (Recomendado)**
+
+```bash
+# Conecte na VPS via SSH
+ssh root@seu-ip-da-vps
+
+# Baixe e execute o script de deploy
+curl -O https://raw.githubusercontent.com/aprimafinanceiro/aprima-controle-financeiro/main/deploy.sh
+sudo bash deploy.sh
+```
+
+O script fará tudo automaticamente:
+- Instalar dependências (Python, Nginx, etc)
+- Criar usuário da aplicação
+- Clonar repositório
+- Configurar ambiente virtual
+- Configurar systemd (processo em background)
+- Configurar Nginx (servidor web)
+- Configurar firewall
+- Opcionalmente configurar SSL/HTTPS
+
+**Opção 2: Deploy Manual**
+
+Consulte o guia completo: [DEPLOY_VPS.md](DEPLOY_VPS.md)
+
+**Após o deploy:**
+
+1. Edite as variáveis de ambiente:
+```bash
+sudo nano /home/aprimabot/aprima-controle-financeiro/.env
+```
+
+2. Reinicie o serviço:
+```bash
+sudo systemctl restart aprima-imoveis
+```
+
+3. Acesse: `http://seu-ip-ou-dominio`
+
+**Comandos úteis VPS:**
+```bash
+# Ver logs em tempo real
+sudo journalctl -u aprima-imoveis -f
+
+# Reiniciar serviço
+sudo systemctl restart aprima-imoveis
+
+# Ver status
+sudo systemctl status aprima-imoveis
+```
+
 ## Configuração do Banco de Dados
 
 ### Setup do Supabase

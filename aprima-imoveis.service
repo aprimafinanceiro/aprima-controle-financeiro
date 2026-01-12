@@ -1,0 +1,36 @@
+[Unit]
+Description=Aprima Imoveis - WhatsApp to Facebook Marketplace Integration
+After=network.target
+
+[Service]
+Type=simple
+User=aprimabot
+Group=aprimabot
+WorkingDirectory=/home/aprimabot/aprima-controle-financeiro
+Environment="PATH=/home/aprimabot/aprima-controle-financeiro/venv/bin"
+EnvironmentFile=/home/aprimabot/aprima-controle-financeiro/.env
+
+# Comando para iniciar com Gunicorn (produção)
+ExecStart=/home/aprimabot/aprima-controle-financeiro/venv/bin/gunicorn \
+    --bind 127.0.0.1:5000 \
+    --workers 2 \
+    --timeout 120 \
+    --access-logfile /var/log/aprima-imoveis/access.log \
+    --error-logfile /var/log/aprima-imoveis/error.log \
+    --log-level info \
+    app:app
+
+# Reiniciar automaticamente se falhar
+Restart=always
+RestartSec=10
+
+# Limites de recursos
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Segurança
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
