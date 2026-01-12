@@ -1,5 +1,2 @@
 flask
-twilio
-spacy
-pandas
-unidecode
+requests
