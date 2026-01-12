@@ -4,7 +4,7 @@ import json
 import requests
 import re
 from datetime import datetime
-import sqlite3
+from supabase import create_client, Client
 
 app = Flask(__name__)
 
@@ -16,29 +16,21 @@ FACEBOOK_ACCESS_TOKEN = os.environ.get('FACEBOOK_ACCESS_TOKEN', '')
 EVOLUTION_API_URL = os.environ.get('EVOLUTION_API_URL', '')
 EVOLUTION_API_KEY = os.environ.get('EVOLUTION_API_KEY', '')
 
-# Database setup
-def init_db():
-    conn = sqlite3.connect('imoveis.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS imoveis (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            whatsapp_message_id TEXT,
-            whatsapp_from TEXT,
-            titulo TEXT,
-            descricao TEXT,
-            preco TEXT,
-            tipo_imovel TEXT,
-            imagens_urls TEXT,
-            facebook_listing_id TEXT,
-            data_cadastro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            status TEXT DEFAULT 'pendente'
-        )
-    ''')
-    conn.commit()
-    conn.close()
+# Configurações do Supabase
+SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
+SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
 
-init_db()
+# Inicializa cliente Supabase
+supabase: Client = None
+if SUPABASE_URL and SUPABASE_KEY:
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        print("✅ Conectado ao Supabase")
+    except Exception as e:
+        print(f"❌ Erro ao conectar ao Supabase: {str(e)}")
+else:
+    print("⚠️ Credenciais do Supabase não configuradas")
+
 
 class FacebookMarketplaceIntegration:
     """Classe para gerenciar integração com Facebook Marketplace"""
@@ -251,6 +243,9 @@ def home():
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
+        if not supabase:
+            return jsonify({"status": "erro", "mensagem": "Supabase não configurado"}), 500
+
         data = request.json
         print("📩 Mensagem recebida do WhatsApp:")
         print(json.dumps(data, indent=2, ensure_ascii=False))
@@ -265,28 +260,26 @@ def webhook():
 
         print(f"🏠 Imóvel detectado: {property_data['titulo']}")
 
-        # Salva no banco de dados
-        conn = sqlite3.connect('imoveis.db')
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT INTO imoveis (whatsapp_message_id, whatsapp_from, titulo, descricao,
-                               preco, tipo_imovel, imagens_urls, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            property_data.get('message_id'),
-            property_data.get('whatsapp_from'),
-            property_data.get('titulo'),
-            property_data.get('descricao'),
-            property_data.get('preco'),
-            property_data.get('tipo'),
-            json.dumps(property_data.get('images', [])),
-            'pendente'
-        ))
-        imovel_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
+        # Salva no Supabase
+        imovel_insert = {
+            'whatsapp_message_id': property_data.get('message_id'),
+            'whatsapp_from': property_data.get('whatsapp_from'),
+            'titulo': property_data.get('titulo'),
+            'descricao': property_data.get('descricao'),
+            'preco': property_data.get('preco'),
+            'tipo_imovel': property_data.get('tipo'),
+            'imagens_urls': property_data.get('images', []),
+            'status': 'pendente'
+        }
 
-        print(f"💾 Imóvel salvo no banco de dados (ID: {imovel_id})")
+        result = supabase.table('imoveis').insert(imovel_insert).execute()
+
+        if result.data and len(result.data) > 0:
+            imovel_id = result.data[0]['id']
+            print(f"💾 Imóvel salvo no Supabase (ID: {imovel_id})")
+        else:
+            print("❌ Erro ao salvar imóvel no Supabase")
+            return jsonify({"status": "erro", "mensagem": "Falha ao salvar no banco"}), 500
 
         # Publica no Facebook Marketplace (se configurado)
         if FACEBOOK_PAGE_ID and FACEBOOK_ACCESS_TOKEN and property_data.get('images'):
@@ -296,14 +289,11 @@ def webhook():
             listing_id = fb_integration.create_listing(property_data)
 
             if listing_id:
-                # Atualiza o banco de dados
-                conn = sqlite3.connect('imoveis.db')
-                cursor = conn.cursor()
-                cursor.execute('''
-                    UPDATE imoveis SET facebook_listing_id = ?, status = ? WHERE id = ?
-                ''', (listing_id, 'publicado', imovel_id))
-                conn.commit()
-                conn.close()
+                # Atualiza o Supabase
+                supabase.table('imoveis').update({
+                    'facebook_listing_id': listing_id,
+                    'status': 'publicado'
+                }).eq('id', imovel_id).execute()
 
                 return jsonify({
                     "status": "sucesso",
@@ -342,30 +332,31 @@ def webhook():
 @app.route('/imoveis', methods=['GET'])
 def listar_imoveis():
     try:
-        conn = sqlite3.connect('imoveis.db')
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT id, titulo, preco, tipo_imovel, status, facebook_listing_id,
-                   data_cadastro FROM imoveis ORDER BY data_cadastro DESC LIMIT 50
-        ''')
-        imoveis = cursor.fetchall()
-        conn.close()
+        if not supabase:
+            return jsonify({"erro": "Supabase não configurado"}), 500
 
-        resultado = []
-        for imovel in imoveis:
-            resultado.append({
-                'id': imovel[0],
-                'titulo': imovel[1],
-                'preco': imovel[2],
-                'tipo': imovel[3],
-                'status': imovel[4],
-                'facebook_listing_id': imovel[5],
-                'data_cadastro': imovel[6]
+        result = supabase.table('imoveis')\
+            .select('id, titulo, preco, tipo_imovel, status, facebook_listing_id, created_at')\
+            .order('created_at', desc=True)\
+            .limit(50)\
+            .execute()
+
+        imoveis = []
+        for imovel in result.data:
+            imoveis.append({
+                'id': imovel['id'],
+                'titulo': imovel['titulo'],
+                'preco': imovel['preco'],
+                'tipo': imovel['tipo_imovel'],
+                'status': imovel['status'],
+                'facebook_listing_id': imovel.get('facebook_listing_id'),
+                'data_cadastro': imovel['created_at']
             })
 
-        return jsonify(resultado), 200
+        return jsonify(imoveis), 200
 
     except Exception as e:
+        print(f"❌ Erro ao listar imóveis: {str(e)}")
         return jsonify({"erro": str(e)}), 500
 
 
@@ -373,30 +364,34 @@ def listar_imoveis():
 @app.route('/imoveis/<int:imovel_id>', methods=['GET'])
 def detalhes_imovel(imovel_id):
     try:
-        conn = sqlite3.connect('imoveis.db')
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM imoveis WHERE id = ?', (imovel_id,))
-        imovel = cursor.fetchone()
-        conn.close()
+        if not supabase:
+            return jsonify({"erro": "Supabase não configurado"}), 500
 
-        if not imovel:
+        result = supabase.table('imoveis')\
+            .select('*')\
+            .eq('id', imovel_id)\
+            .execute()
+
+        if not result.data or len(result.data) == 0:
             return jsonify({"erro": "Imóvel não encontrado"}), 404
 
+        imovel = result.data[0]
         return jsonify({
-            'id': imovel[0],
-            'whatsapp_message_id': imovel[1],
-            'whatsapp_from': imovel[2],
-            'titulo': imovel[3],
-            'descricao': imovel[4],
-            'preco': imovel[5],
-            'tipo': imovel[6],
-            'imagens_urls': json.loads(imovel[7]) if imovel[7] else [],
-            'facebook_listing_id': imovel[8],
-            'data_cadastro': imovel[9],
-            'status': imovel[10]
+            'id': imovel['id'],
+            'whatsapp_message_id': imovel.get('whatsapp_message_id'),
+            'whatsapp_from': imovel.get('whatsapp_from'),
+            'titulo': imovel['titulo'],
+            'descricao': imovel.get('descricao'),
+            'preco': imovel['preco'],
+            'tipo': imovel['tipo_imovel'],
+            'imagens_urls': imovel.get('imagens_urls', []),
+            'facebook_listing_id': imovel.get('facebook_listing_id'),
+            'data_cadastro': imovel['created_at'],
+            'status': imovel['status']
         }), 200
 
     except Exception as e:
+        print(f"❌ Erro ao buscar imóvel: {str(e)}")
         return jsonify({"erro": str(e)}), 500
 
 
